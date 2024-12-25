@@ -21,7 +21,10 @@ RUN mkdir -p uploads data
 # Create non-root user and set permissions
 RUN useradd -m appuser && \
     chown -R appuser:appuser /app && \
-    chmod 755 /app/data  # Ensure write permissions for the data directory
+    chmod 755 /app/data && \
+    touch data/database.db && \
+    chown appuser:appuser data/database.db && \
+    chmod 666 data/database.db
 
 USER appuser
 
