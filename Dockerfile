@@ -16,12 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create directories with proper permissions
-RUN mkdir -p uploads data && \
-    useradd -m appuser && \
-    chown -R appuser:appuser /app && \
-    chmod -R 777 /app/data  # Give full permissions to data directory
-
-USER appuser
+RUN mkdir -p uploads data
 
 # Expose port
 EXPOSE 8000
