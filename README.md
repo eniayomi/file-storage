@@ -22,6 +22,20 @@ A secure web application for storing and sharing files with customizable url.
 - 🔄 Automatic directory creation
 - 🐳 Docker support
 
+## URL Examples
+```
+# Custom URLs for easy sharing:
+http://your-domain.com/download/my-resume/file
+http://your-domain.com/download/holiday-pics/file
+
+# Version control adds suffix automatically when you reuse an existing name for a new file:
+http://your-domain.com/download/my-resume-v1/file
+http://your-domain.com/download/holiday-pics-v1/file
+```
+
+When uploading a file, you can choose a custom URL that's meaningful to you. For example:
+- Upload your resume as "my-resume"
+
 ## Technical Stack
 - FastAPI (Python web framework)
 - SQLite (Database)
