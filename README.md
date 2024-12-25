@@ -12,7 +12,7 @@ A secure web application for storing and sharing files with customizable url.
 - 🔐 Secure authentication system with session timeout
 - 📁 Custom link names for each uploaded file
 - 🔄 File versioning support
-- 🌐 Public/Private file sharing options
+- 🌐 Public/Private file toggle options
 - ⏲️ 30-minute session timeout for security
 - 🔗 Easy-to-share download links
 - 🗑️ File management (upload, delete, visibility toggle)
