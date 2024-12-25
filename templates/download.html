@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Download File</title>
+    <link href="/static/styles.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <h1>File Ready for Download</h1>
+        <p>Your file: {{ file_path }}</p>
+        <div class="button-group">
+            <a href="/download/{{ custom_link }}/file" class="button">Download File</a>
+            <button class="button" onclick="copyToClipboard('{{ request.base_url }}download/{{ custom_link }}/file')">Copy URL</button>
+            <a href="/" class="button">Home</a>
+        </div>
+    </div>
+
+    <script>
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            alert('Download URL copied to clipboard!');
+        }).catch(err => {
+            console.error('Failed to copy text: ', err);
+        });
+    }
+    </script>
+</body>
+</html>

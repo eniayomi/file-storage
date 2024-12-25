@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>File Storage</title>
+    <link href="/static/styles.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>File Storage</h1>
+            <a href="/logout" class="button logout">Logout</a>
+        </div>
+        
+        <div class="upload-section">
+            <h2>Upload New File</h2>
+            <form action="/upload/" method="post" enctype="multipart/form-data" class="upload-form">
+                <div class="form-group">
+                    <label for="file">Select File:</label>
+                    <input type="file" id="file" name="file" required>
+                </div>
+                <div class="form-group">
+                    <label for="custom_link">Custom Link Name:</label>
+                    <input type="text" id="custom_link" name="custom_link" required 
+                           placeholder="e.g., my-resume">
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="is_public" name="is_public" value="true">
+                        Make file publicly accessible
+                    </label>
+                </div>
+                <button type="submit" class="button">Upload</button>
+            </form>
+        </div>
+
+        <div class="files-section">
+            <h2>Available Files</h2>
+            {% if files %}
+                <div class="files-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Filename</th>
+                                <th>Size</th>
+                                <th>Upload Date</th>
+                                <th>Visibility</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for file in files %}
+                            <tr>
+                                <td>{{ file.filename }}</td>
+                                <td>{{ file.size }}</td>
+                                <td>{{ file.created_at }}</td>
+                                <td>
+                                    <form action="/toggle-visibility/{{ file.custom_link }}" method="post" style="display: inline;">
+                                        <button type="submit" class="button small {% if file.is_public %}badge-public{% else %}badge-private{% endif %}">
+                                            {{ "Public" if file.is_public else "Private" }}
+                                        </button>
+                                    </form>
+                                </td>
+                                <td class="actions">
+                                    <a href="/download/{{ file.custom_link }}/file" class="button small">Download</a>
+                                    <button class="button small" onclick="copyToClipboard('{{ request.base_url }}download/{{ file.custom_link }}/file')">Copy URL</button>
+                                    <button class="button small delete" onclick="confirmDelete('{{ file.custom_link }}', '{{ file.filename }}')">Delete</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="no-files">No files uploaded yet.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            alert('Download URL copied to clipboard!');
+        }).catch(err => {
+            console.error('Failed to copy text: ', err);
+        });
+    }
+
+    function confirmDelete(customLink, filename) {
+        if (confirm(`Are you sure you want to delete ${filename}?`)) {
+            fetch(`/delete/${customLink}`, {
+                method: 'POST'
+            }).then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Error deleting file');
+                }
+            });
+        }
+    }
+
+    function checkSessionStatus() {
+        fetch('/session-status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.session_active) {
+                    const timeStr = data.time_remaining;
+                    const minutes = parseInt(timeStr.split(' ')[0]);
+                    
+                    // Only show warning when 10 minutes or less remain
+                    if (minutes <= 10) {
+                        if (!document.querySelector('.session-warning')) {
+                            const warning = document.createElement('div');
+                            warning.className = 'session-warning';
+                            warning.textContent = `Session will expire in ${timeStr}. Please save your work.`;
+                            document.body.appendChild(warning);
+                        }
+                    }
+                }
+            })
+            .catch(err => console.error('Session check failed:', err));
+    }
+
+    // Check session status every minute
+    setInterval(checkSessionStatus, 60000);
+    </script>
+</body>
+</html>
