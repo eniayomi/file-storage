@@ -2,6 +2,12 @@
 
 A secure web application for storing and sharing files with customizable url.
 
+## Preview
+![File Storage Interface](http://storage.eniayomi.com/download/file-storage-demo/file)
+*File Storage interface showing upload form and file management*
+
+> **Fun fact:** This preview image is actually being served by this tool! It was uploaded and made public using the file storage service itself. 🎉
+
 ## Features
 - 🔐 Secure authentication system with session timeout
 - 📁 Custom link names for each uploaded file
