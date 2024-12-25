@@ -18,6 +18,7 @@ load_dotenv()
 
 # Define constants with environment variable support
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")  # Use custom path from .env or default to "uploads"
+DATABASE_PATH = os.getenv('DATABASE_PATH', 'database.db')
 SESSION_TIMEOUT = 30 * 60  # 30 minutes in seconds
 USERNAME = os.getenv("ADMIN_USERNAME")
 PASSWORD = os.getenv("ADMIN_PASSWORD")
@@ -39,7 +40,7 @@ def ensure_upload_dir():
 # Database connection management
 @contextmanager
 def get_db():
-    db = sqlite3.connect('database.db')
+    db = sqlite3.connect(DATABASE_PATH)
     try:
         yield db
     finally:

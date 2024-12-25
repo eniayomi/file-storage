@@ -15,11 +15,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create uploads directory
-RUN mkdir -p uploads
+# Create uploads directory and data directory
+RUN mkdir -p uploads data
 
-# Create non-root user
-RUN useradd -m appuser && chown -R appuser:appuser /app
+# Create non-root user and set permissions
+RUN useradd -m appuser && \
+    chown -R appuser:appuser /app && \
+    chmod 755 /app/data  # Ensure write permissions for the data directory
+
 USER appuser
 
 # Expose port
