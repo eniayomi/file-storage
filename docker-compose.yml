@@ -14,8 +14,9 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_NAME=${DB_NAME:-file-storage}
-      - DB_USER=${DB_USER:-postgres}
+      - DB_USER=${DB_USER:-devops}
       - DB_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-admin}
     env_file:
       - .env
     restart: unless-stopped
@@ -33,18 +34,12 @@ services:
     image: postgres:15-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./postgres:/docker-entrypoint-initdb.d
     environment:
-      # Superuser credentials
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-admin}
-      # App user credentials
-      - APP_USER=${DB_USER:-devops}
-      - APP_PASSWORD=${DB_PASSWORD:-password}
-      - APP_DB=${DB_NAME:-file_storage}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-devops}"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
