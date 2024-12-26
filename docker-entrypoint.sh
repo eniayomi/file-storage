@@ -4,7 +4,8 @@ set -e
 # Wait for PostgreSQL if using it
 if [ "$DB_TYPE" = "postgres" ]; then
     echo "Waiting for PostgreSQL..."
-    while ! curl -s "http://$DB_HOST:$DB_PORT" > /dev/null; do
+    until pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER"; do
+        echo "PostgreSQL is unavailable - sleeping"
         sleep 1
     done
     echo "PostgreSQL is up"

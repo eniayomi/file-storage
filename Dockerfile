@@ -6,6 +6,8 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    curl \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache
@@ -17,7 +19,6 @@ COPY . .
 
 # Create necessary directories
 RUN mkdir -p /app/uploads /app/data
-
 
 # Create entrypoint script
 COPY docker-entrypoint.sh /app/
