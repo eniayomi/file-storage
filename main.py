@@ -6,20 +6,20 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from typing import Optional
 import secrets
-import sqlite3
 import os
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import time
-from contextlib import contextmanager
 import mimetypes
+from sqlalchemy.orm import Session
+from models import Link
+from database import get_db
 
 # Load environment variables
 load_dotenv()
 
 # Define constants with environment variable support
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")  # Use custom path from .env or default to "uploads"
-DATABASE_PATH = os.getenv('DATABASE_PATH', 'database.db')
 SESSION_TIMEOUT = 30 * 60  # 30 minutes in seconds
 USERNAME = os.getenv("ADMIN_USERNAME")
 PASSWORD = os.getenv("ADMIN_PASSWORD")
@@ -38,37 +38,8 @@ def ensure_upload_dir():
     except Exception as e:
         raise Exception(f"Failed to create upload directory: {e}")
 
-# Database connection management
-@contextmanager
-def get_db():
-    db = sqlite3.connect(DATABASE_PATH)
-    try:
-        yield db
-    finally:
-        db.close()
-
-def init_database():
-    """Initialize the database and create tables if they don't exist"""
-    try:
-        ensure_upload_dir()
-        with get_db() as db:
-            cursor = db.cursor()
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS links (
-                    custom_link TEXT PRIMARY KEY,
-                    file_path TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    is_public BOOLEAN DEFAULT 0,
-                    file_password TEXT
-                )
-            ''')
-            db.commit()
-    except Exception as e:
-        print(f"Database initialization error: {e}")
-        raise
-
-# Initialize database
-init_database()
+# Ensure upload directory exists
+ensure_upload_dir()
 
 app = FastAPI()
 
@@ -159,10 +130,8 @@ class SessionTimeoutMiddleware(BaseHTTPMiddleware):
             if len(path_parts) >= 3:  # Ensure we have enough parts in the path
                 custom_link = path_parts[-2]
                 with get_db() as db:
-                    cursor = db.cursor()
-                    cursor.execute("SELECT is_public FROM links WHERE custom_link = ?", (custom_link,))
-                    result = cursor.fetchone()
-                    if result and result[0]:  # If file is public
+                    link = db.query(Link).filter(Link.custom_link == custom_link).first()
+                    if link and link.is_public:  # If file is public
                         return await call_next(request)
 
         # Check for credentials
@@ -189,14 +158,13 @@ app.add_middleware(SessionTimeoutMiddleware)
 @app.get("/")
 def home(request: Request, credentials: HTTPBasicCredentials = Depends(verify_credentials)):
     with get_db() as db:
-        cursor = db.cursor()
-        cursor.execute("SELECT custom_link, file_path, created_at, is_public FROM links")
-        files = cursor.fetchall()
+        # Get all links using SQLAlchemy
+        files = db.query(Link).all()
         
         files_info = []
-        for link, path, created_at, is_public in files:
-            if os.path.exists(path):
-                size = os.path.getsize(path)
+        for link in files:
+            if os.path.exists(link.file_path):
+                size = os.path.getsize(link.file_path)
                 if size < 1024:
                     size_str = f"{size} B"
                 elif size < 1024 * 1024:
@@ -205,12 +173,12 @@ def home(request: Request, credentials: HTTPBasicCredentials = Depends(verify_cr
                     size_str = f"{size/(1024*1024):.1f} MB"
                     
                 files_info.append({
-                    "custom_link": link,
-                    "filename": os.path.basename(path),
+                    "custom_link": link.custom_link,
+                    "filename": os.path.basename(link.file_path),
                     "size": size_str,
-                    "created_at": datetime.fromisoformat(created_at).strftime("%Y-%m-%d %H:%M:%S"),
-                    "is_public": is_public,
-                    "download_url": f"/download/{link}"
+                    "created_at": link.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    "is_public": link.is_public,
+                    "download_url": f"/download/{link.custom_link}"
                 })
         
         return templates.TemplateResponse(
@@ -229,28 +197,20 @@ async def upload_file(
 ):
     try:
         with get_db() as db:
-            cursor = db.cursor()
-            current_time = datetime.now().isoformat()
-            
             # Check if custom_link already exists
-            cursor.execute("SELECT file_path FROM links WHERE custom_link = ?", (custom_link,))
-            existing = cursor.fetchone()
+            existing = db.query(Link).filter(Link.custom_link == custom_link).first()
             
             if existing:
                 # Create a versioned custom_link for the existing file
                 version = 1
                 while True:
                     versioned_link = f"{custom_link}-v{version}"
-                    cursor.execute("SELECT file_path FROM links WHERE custom_link = ?", (versioned_link,))
-                    if not cursor.fetchone():
+                    if not db.query(Link).filter(Link.custom_link == versioned_link).first():
                         break
                     version += 1
                     
                 # Rename the existing entry to include version
-                cursor.execute(
-                    "UPDATE links SET custom_link = ? WHERE custom_link = ?",
-                    (versioned_link, custom_link)
-                )
+                existing.custom_link = versioned_link
                 db.commit()
             
             # Save the new file
@@ -259,11 +219,14 @@ async def upload_file(
             with open(file_path, "wb") as f:
                 f.write(contents)
 
-            # Insert the new file with the original custom_link
-            cursor.execute(
-                "INSERT INTO links (custom_link, file_path, created_at, is_public, file_password) VALUES (?, ?, ?, ?, ?)",
-                (custom_link, file_path, current_time, is_public, file_password)
+            # Create new link with hashed password
+            new_link = Link(
+                custom_link=custom_link,
+                file_path=file_path,
+                is_public=is_public,
+                file_password=Link.hash_password(file_password)
             )
+            db.add(new_link)
             db.commit()
 
             return RedirectResponse(
@@ -284,15 +247,11 @@ async def file_page(
 ):
     """Show file info and download/preview options"""
     with get_db() as db:
-        cursor = db.cursor()
-        cursor.execute("SELECT file_path, is_public, file_password FROM links WHERE custom_link = ?", (custom_link,))
-        result = cursor.fetchone()
+        link = db.query(Link).filter(Link.custom_link == custom_link).first()
         
-        if not result:
+        if not link:
             raise HTTPException(status_code=404, detail="File not found")
             
-        file_path, is_public, file_password = result
-        
         # Check if user is admin
         is_admin = False
         if credentials:
@@ -308,8 +267,8 @@ async def file_page(
             {
                 "request": request,
                 "custom_link": custom_link,
-                "file_path": os.path.basename(file_path),
-                "requires_password": bool(file_password),
+                "file_path": os.path.basename(link.file_path),
+                "requires_password": bool(link.file_password),
                 "download_link": f"/download/{custom_link}/file",
                 "preview_link": f"/preview/{custom_link}/file",
                 "is_admin": is_admin
@@ -326,20 +285,16 @@ async def serve_file(
 ):
     """Serve the actual file download"""
     with get_db() as db:
-        cursor = db.cursor()
-        cursor.execute("SELECT file_path, is_public, file_password FROM links WHERE custom_link = ?", (custom_link,))
-        result = cursor.fetchone()
+        link = db.query(Link).filter(Link.custom_link == custom_link).first()
 
-        if not result:
+        if not link:
             raise HTTPException(status_code=404, detail="File not found")
 
-        file_path, is_public, stored_password = result
-
         # If file is public, serve it
-        if is_public:
+        if link.is_public:
             return FileResponse(
-                file_path,
-                filename=os.path.basename(file_path),
+                link.file_path,
+                filename=os.path.basename(link.file_path),
                 media_type='application/octet-stream'
             )
 
@@ -349,24 +304,24 @@ async def serve_file(
             correct_password = secrets.compare_digest(credentials.password, PASSWORD)
             if correct_username and correct_password:
                 return FileResponse(
-                    file_path,
-                    filename=os.path.basename(file_path),
+                    link.file_path,
+                    filename=os.path.basename(link.file_path),
                     media_type='application/octet-stream'
                 )
 
         # For password-protected files, redirect to file info page if no password provided
-        if stored_password and not file_password:
+        if link.file_password and not file_password:
             return RedirectResponse(
                 url=f"/file/{custom_link}",
                 status_code=303
             )
 
         # Verify file password if provided
-        if stored_password and file_password:
-            if secrets.compare_digest(str(stored_password), str(file_password)):
+        if link.file_password and file_password:
+            if link.verify_password(file_password):
                 return FileResponse(
-                    file_path,
-                    filename=os.path.basename(file_path),
+                    link.file_path,
+                    filename=os.path.basename(link.file_path),
                     media_type='application/octet-stream'
                 )
             else:
@@ -385,11 +340,9 @@ async def serve_file(
 @app.get("/files")
 def list_files(request: Request):
     with get_db() as db:
-        cursor = db.cursor()
-        cursor.execute("SELECT custom_link, file_path FROM links")
-        files = cursor.fetchall()
-        files = [{"custom_link": link, "filename": os.path.basename(path)} for link, path in files]
-        return templates.TemplateResponse("files.html", {"request": request, "files": files})
+        files = db.query(Link).all()
+        files_info = [{"custom_link": link.custom_link, "filename": os.path.basename(link.file_path)} for link in files]
+        return templates.TemplateResponse("files.html", {"request": request, "files": files_info})
 
 @app.post("/delete/{custom_link}")
 async def delete_file(
@@ -397,24 +350,18 @@ async def delete_file(
     credentials: HTTPBasicCredentials = Depends(verify_credentials)
 ):
     with get_db() as db:
-        cursor = db.cursor()
+        link = db.query(Link).filter(Link.custom_link == custom_link).first()
         
-        # Get file info before deletion
-        cursor.execute("SELECT file_path FROM links WHERE custom_link = ?", (custom_link,))
-        result = cursor.fetchone()
-        
-        if not result:
+        if not link:
             return RedirectResponse(
                 url="/?error=File not found",
                 status_code=303
             )
             
-        file_path = result[0]
-        
         # Delete file from filesystem
         try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            if os.path.exists(link.file_path):
+                os.remove(link.file_path)
         except Exception as e:
             return RedirectResponse(
                 url=f"/?error=Error deleting file: {str(e)}",
@@ -422,7 +369,7 @@ async def delete_file(
             )
             
         # Delete database entry
-        cursor.execute("DELETE FROM links WHERE custom_link = ?", (custom_link,))
+        db.delete(link)
         db.commit()
         
         return RedirectResponse(
@@ -436,25 +383,18 @@ async def toggle_visibility(
     credentials: HTTPBasicCredentials = Depends(verify_credentials)
 ):
     with get_db() as db:
-        cursor = db.cursor()
-        cursor.execute("SELECT is_public FROM links WHERE custom_link = ?", (custom_link,))
-        result = cursor.fetchone()
+        link = db.query(Link).filter(Link.custom_link == custom_link).first()
         
-        if not result:
+        if not link:
             return RedirectResponse(
                 url="/?error=File not found",
                 status_code=303
             )
         
-        new_status = not result[0]  # Toggle the current status
-        
-        cursor.execute(
-            "UPDATE links SET is_public = ? WHERE custom_link = ?",
-            (new_status, custom_link)
-        )
+        link.is_public = not link.is_public
         db.commit()
         
-        status_text = "public" if new_status else "private"
+        status_text = "public" if link.is_public else "private"
         return RedirectResponse(
             url=f"/file/{custom_link}?success=File visibility changed to {status_text}",
             status_code=303
@@ -494,19 +434,15 @@ async def preview_file(
     credentials: Optional[HTTPBasicCredentials] = Depends(security)
 ):
     with get_db() as db:
-        cursor = db.cursor()
-        cursor.execute("SELECT file_path, is_public, file_password FROM links WHERE custom_link = ?", (custom_link,))
-        result = cursor.fetchone()
+        link = db.query(Link).filter(Link.custom_link == custom_link).first()
 
-        if not result:
+        if not link:
             raise HTTPException(status_code=404, detail="File not found")
-
-        file_path, is_public, stored_password = result
         
         # If file is public, serve it
-        if is_public:
+        if link.is_public:
             return FileResponse(
-                file_path,
+                link.file_path,
                 headers={"Content-Disposition": "inline"}
             )
 
@@ -516,22 +452,22 @@ async def preview_file(
             correct_password = secrets.compare_digest(credentials.password, PASSWORD)
             if correct_username and correct_password:
                 return FileResponse(
-                    file_path,
+                    link.file_path,
                     headers={"Content-Disposition": "inline"}
                 )
 
         # For password-protected files, redirect to file info page if no password provided
-        if stored_password and not file_password:
+        if link.file_password and not file_password:
             return RedirectResponse(
                 url=f"/file/{custom_link}",
                 status_code=303
             )
 
         # Verify file password if provided
-        if stored_password and file_password:
-            if secrets.compare_digest(str(stored_password), str(file_password)):
+        if link.file_password and file_password:
+            if secrets.compare_digest(str(link.file_password), str(file_password)):
                 return FileResponse(
-                    file_path,
+                    link.file_path,
                     headers={"Content-Disposition": "inline"}
                 )
             else:

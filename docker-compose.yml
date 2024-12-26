@@ -10,6 +10,12 @@ services:
       - ./data:/app/data
     environment:
       - DATABASE_PATH=/app/data/database.db
+      - DB_TYPE=${DB_TYPE:-sqlite}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-file_storage}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
     env_file:
       - .env
     restart: unless-stopped
@@ -18,3 +24,24 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./data:/app/data  # Shared volume for SQLite fallback
+    environment:
+      - POSTGRES_DB=${DB_NAME:-file_storage}
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
