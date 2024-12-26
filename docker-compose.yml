@@ -34,12 +34,12 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
-      - POSTGRES_USER=${DB_USER:-devops}
+      - POSTGRES_USER=${DB_USER:-file_storage}
       - POSTGRES_PASSWORD=${DB_PASSWORD:-password}
       - POSTGRES_DB=${DB_NAME:-file_storage}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-file_storage}"]
       interval: 10s
       timeout: 5s
       retries: 5
