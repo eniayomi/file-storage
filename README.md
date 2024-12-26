@@ -22,11 +22,10 @@ A secure web application for storing and sharing files with customizable url.
 - 🔄 Automatic directory creation
 - 🐳 Docker support
 - 🔒 Password protection for files
-- 👀 File preview support
-- 🎯 Quick copy preview links
-- 🎯 Direct download option
-- 🔔 Toast notifications for actions
-- 🎨 Improved UI/UX with consistent styling
+- 🗄️ Database support:
+  - SQLite (default)
+  - PostgreSQL
+- 🔄 Database migrations using Alembic
 
 ## URL Structure
 ```
@@ -64,7 +63,9 @@ When uploading a file, you can:
 
 ## Technical Stack
 - FastAPI (Python web framework)
-- SQLite (Database)
+- SQLite/PostgreSQL (Database)
+- SQLAlchemy (ORM)
+- Alembic (Database migrations)
 - HTTP Basic Auth (Authentication)
 - Jinja2 Templates (Frontend)
 - Custom middleware for session management
@@ -79,9 +80,28 @@ When uploading a file, you can:
    ADMIN_USERNAME=your_username
    ADMIN_PASSWORD=your_password
    UPLOAD_DIR=/path/to/custom/uploads  # Optional - defaults to "uploads" folder
+   
+   # Database Configuration (Optional)
+   DB_TYPE=sqlite                      # or 'postgres'
+   DATABASE_PATH=/path/to/data         # SQLite only - defaults to "./data"
+   DB_NAME=file-storage               # defaults to "file-storage"
+   
+   # PostgreSQL Configuration (if using postgres)
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_USER=postgres
+   DB_PASSWORD=your_password
    ```
 3. Install dependencies: `pip install -r requirements.txt`
-4. Run the application: `uvicorn main:app --reload`
+4. Initialize database:
+   ```bash
+   # Create initial migration
+   alembic revision --autogenerate -m "Initial schema"
+   
+   # Apply migration
+   alembic upgrade head
+   ```
+5. Run the application: `uvicorn main:app --reload`
 
 ### Method 2: Docker Setup
 1. Clone the repository

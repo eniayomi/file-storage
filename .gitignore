@@ -4,7 +4,6 @@ data/
 uploads/
 
 # Alembic
-migrations/versions/*
 !migrations/versions/.gitkeep
 
 # Python

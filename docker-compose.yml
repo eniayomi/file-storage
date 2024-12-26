@@ -9,11 +9,11 @@ services:
       - ./uploads:/app/uploads
       - ./data:/app/data
     environment:
-      - DATABASE_PATH=/app/data/database.db
+      - DATABASE_PATH=/app/data
       - DB_TYPE=${DB_TYPE:-sqlite}
       - DB_HOST=db
       - DB_PORT=5432
-      - DB_NAME=${DB_NAME:-file_storage}
+      - DB_NAME=${DB_NAME:-file-storage}
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD}
     env_file:
@@ -25,15 +25,16 @@ services:
       timeout: 10s
       retries: 3
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+        required: false
 
   db:
     image: postgres:15-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./data:/app/data  # Shared volume for SQLite fallback
     environment:
-      - POSTGRES_DB=${DB_NAME:-file_storage}
+      - POSTGRES_DB=${DB_NAME:-file-storage}
       - POSTGRES_USER=${DB_USER:-postgres}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
     restart: unless-stopped
@@ -42,6 +43,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    profiles:
+      - postgres
 
 volumes:
   postgres_data:
