@@ -11,16 +11,7 @@ if [ "$DB_TYPE" = "postgres" ]; then
 
     # Create database and user if they don't exist
     echo "Setting up database and user..."
-    PGPASSWORD=$POSTGRES_PASSWORD psql -h "$DB_HOST" -p "$DB_PORT" -U "postgres" <<-EOSQL
-        -- Create user if not exists
-        DO \$\$
-        BEGIN
-            IF NOT EXISTS (SELECT FROM pg_user WHERE usename = '$DB_USER') THEN
-                CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';
-            END IF;
-        END
-        \$\$;
-
+    PGPASSWORD=$DB_PASSWORD psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" <<-EOSQL
         -- Create database if not exists
         SELECT 'CREATE DATABASE $DB_NAME'
         WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$DB_NAME')\gexec

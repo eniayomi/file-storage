@@ -15,8 +15,7 @@ services:
       - DB_PORT=5432
       - DB_NAME=${DB_NAME:-file-storage}
       - DB_USER=${DB_USER:-devops}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-admin}
+      - DB_PASSWORD=${DB_PASSWORD:-password}
     env_file:
       - .env
     restart: unless-stopped
@@ -35,8 +34,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-admin}
+      - POSTGRES_USER=${DB_USER:-devops}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-password}
+      - POSTGRES_DB=${DB_NAME:-file_storage}
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
