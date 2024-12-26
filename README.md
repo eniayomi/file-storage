@@ -21,20 +21,46 @@ A secure web application for storing and sharing files with customizable url.
 - 📂 Configurable upload directory
 - 🔄 Automatic directory creation
 - 🐳 Docker support
+- 🔒 Password protection for files
+- 👀 File preview support
+- 🎯 Quick copy preview links
+- 🎯 Direct download option
+- 🔔 Toast notifications for actions
+- 🎨 Improved UI/UX with consistent styling
 
-## URL Examples
+## URL Structure
 ```
-# Custom URLs for easy sharing:
-http://your-domain.com/download/my-resume/file
-http://your-domain.com/download/holiday-pics/file
+# Clean and intuitive URLs:
+http://your-domain.com/file/my-resume        # File info page
+http://your-domain.com/download/my-resume    # Direct download
+http://your-domain.com/preview/my-resume     # Browser preview
 
-# Version control adds suffix automatically when you reuse an existing name for a new file:
-http://your-domain.com/download/my-resume-v1/file
-http://your-domain.com/download/holiday-pics-v1/file
+# Version control adds suffix automatically:
+http://your-domain.com/file/my-resume-v1
+http://your-domain.com/download/my-resume-v1
+http://your-domain.com/preview/my-resume-v1
 ```
 
-When uploading a file, you can choose a custom URL that's meaningful to you. For example:
-- Upload your resume as "my-resume"
+When uploading a file, you can:
+- Choose a custom URL that's meaningful to you
+- Set a password for private files
+- Make files public or private
+- Preview files directly in the browser
+- Download files directly
+
+## File Access Levels
+- **Public Files**: Accessible to anyone with the link
+- **Private Files**: Requires password or admin access
+- **Admin Access**: Full access to all files and management features
+
+## User Interface Features
+- Toast notifications for all actions (success, error, info)
+- Separate download and preview options
+- Quick copy buttons for sharing links
+- Improved file deletion confirmation
+- Clear visual indicators for file visibility status
+- Custom link name display in file list
+- Clean and intuitive URL structure
 
 ## Technical Stack
 - FastAPI (Python web framework)

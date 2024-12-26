@@ -3,26 +3,136 @@
 <head>
     <title>Download File</title>
     <link href="/static/styles.css" rel="stylesheet">
+    <style>
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            color: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: none;
+            animation: slideIn 0.5s, fadeOut 0.5s 2.5s;
+            z-index: 1000;
+        }
+
+        .toast.success {
+            background-color: #28a745;
+        }
+
+        .toast.error {
+            background-color: #dc3545;
+        }
+
+        .toast.info {
+            background-color: #17a2b8;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+            }
+            to {
+                opacity: 0;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <h1>File Ready for Download</h1>
         <p>Your file: {{ file_path }}</p>
-        <div class="button-group">
-            <a href="/download/{{ custom_link }}/file" class="button">Download File</a>
-            <button class="button" onclick="copyToClipboard('{{ request.base_url }}download/{{ custom_link }}/file')">Copy URL</button>
-            <a href="/" class="button">Home</a>
+
+        {% if requires_password and not is_admin %}
+        <div class="download-section">
+            <p>File Password:</p>
+            <form method="POST" action="/download/{{ custom_link }}" class="inline-form">
+                <input type="password" name="file_password" required>
+                <div class="button-group">
+                    <button type="submit" class="button">Download</button>
+                </div>
+            </form>
         </div>
+        {% else %}
+        <div class="button-group">
+            <button class="button" onclick="window.location.href='/download/{{ custom_link }}'">Download</button>
+            {% if is_admin %}
+            <button class="button" onclick="copyToClipboard('{{ request.base_url }}preview/{{ custom_link }}')">Copy Preview Link</button>
+            <a href="/" class="button">Home</a>
+            {% endif %}
+        </div>
+        {% endif %}
     </div>
 
+    <div id="toast" class="toast"></div>
+
     <script>
+    function showToast(message, type = 'info') {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        
+        // Remove all existing classes
+        toast.classList.remove('success', 'error', 'info');
+        
+        // Add the appropriate class
+        toast.classList.add(type);
+        
+        toast.style.display = 'block';
+        
+        // Hide toast after 3 seconds
+        setTimeout(() => {
+            toast.style.display = 'none';
+        }, 3000);
+    }
+
     function copyToClipboard(text) {
         navigator.clipboard.writeText(text).then(() => {
-            alert('Download URL copied to clipboard!');
+            showToast('Preview link copied to clipboard!', 'success');
         }).catch(err => {
             console.error('Failed to copy text: ', err);
+            showToast('Failed to copy preview link', 'error');
         });
     }
+
+    // Check for URL parameters when the page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        const error = urlParams.get('error');
+        const success = urlParams.get('success');
+        const info = urlParams.get('info');
+
+        if (error === 'incorrect_password') {
+            showToast('Incorrect password. Please try again.', 'error');
+        } else if (error) {
+            showToast(decodeURIComponent(error), 'error');
+        }
+
+        if (success) {
+            showToast(decodeURIComponent(success), 'success');
+        }
+
+        if (info) {
+            showToast(decodeURIComponent(info), 'info');
+        }
+
+        // Clear URL parameters after showing toast
+        if (error || success || info) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    });
     </script>
 </body>
 </html>

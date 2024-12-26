@@ -3,6 +3,52 @@
 <head>
     <title>File Storage</title>
     <link href="/static/styles.css" rel="stylesheet">
+    <style>
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            color: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: none;
+            animation: slideIn 0.5s, fadeOut 0.5s 2.5s;
+            z-index: 1000;
+        }
+
+        .toast.success {
+            background-color: #28a745;
+        }
+
+        .toast.error {
+            background-color: #ff4444;
+        }
+
+        .toast.info {
+            background-color: #17a2b8;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+            }
+            to {
+                opacity: 0;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -11,23 +57,27 @@
             <a href="/logout" class="button logout">Logout</a>
         </div>
         
-        <div class="upload-section">
+        <div class="upload-form">
             <h2>Upload New File</h2>
-            <form action="/upload/" method="post" enctype="multipart/form-data" class="upload-form">
+            <form action="/upload/" method="post" enctype="multipart/form-data">
                 <div class="form-group">
                     <label for="file">Select File:</label>
-                    <input type="file" id="file" name="file" required>
+                    <input type="file" name="file" id="file" required>
                 </div>
                 <div class="form-group">
                     <label for="custom_link">Custom Link Name:</label>
-                    <input type="text" id="custom_link" name="custom_link" required 
-                           placeholder="e.g., my-resume">
+                    <input type="text" name="custom_link" id="custom_link" placeholder="e.g., my-resume" required>
                 </div>
                 <div class="form-group">
                     <label class="checkbox-label">
-                        <input type="checkbox" id="is_public" name="is_public" value="true">
+                        <input type="checkbox" name="is_public" id="is_public">
                         Make file publicly accessible
                     </label>
+                </div>
+                <div class="form-group">
+                    <label for="file_password">File Password (optional):</label>
+                    <input type="password" name="file_password" id="file_password">
+                    <small>Set a password for private file access without admin login</small>
                 </div>
                 <button type="submit" class="button">Upload</button>
             </form>
@@ -41,6 +91,7 @@
                         <thead>
                             <tr>
                                 <th>Filename</th>
+                                <th>Custom Link</th>
                                 <th>Size</th>
                                 <th>Upload Date</th>
                                 <th>Visibility</th>
@@ -51,6 +102,7 @@
                             {% for file in files %}
                             <tr>
                                 <td>{{ file.filename }}</td>
+                                <td>{{ file.custom_link }}</td>
                                 <td>{{ file.size }}</td>
                                 <td>{{ file.created_at }}</td>
                                 <td>
@@ -61,9 +113,11 @@
                                     </form>
                                 </td>
                                 <td class="actions">
-                                    <a href="/download/{{ file.custom_link }}/file" class="button small">Download</a>
-                                    <button class="button small" onclick="copyToClipboard('{{ request.base_url }}download/{{ file.custom_link }}/file')">Copy URL</button>
-                                    <button class="button small delete" onclick="confirmDelete('{{ file.custom_link }}', '{{ file.filename }}')">Delete</button>
+                                    <button class="button" onclick="window.location.href='/download/{{ file.custom_link }}'">Download</button>
+                                    <button class="button" onclick="copyToClipboard('{{ request.base_url }}preview/{{ file.custom_link }}')">Copy Preview Link</button>
+                                    <form action="/delete/{{ file.custom_link }}" method="post" style="display: inline;" onsubmit="return confirmDelete('{{ file.filename }}')">
+                                        <button type="submit" class="button delete">Delete</button>
+                                    </form>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -76,27 +130,40 @@
         </div>
     </div>
 
+    <div id="toast" class="toast"></div>
+
     <script>
+    function showToast(message, type = 'info') {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        
+        toast.classList.remove('success', 'error', 'info');
+        toast.classList.add(type);
+        
+        toast.style.display = 'block';
+        
+        setTimeout(() => {
+            toast.style.display = 'none';
+        }, 3000);
+    }
+
     function copyToClipboard(text) {
         navigator.clipboard.writeText(text).then(() => {
-            alert('Download URL copied to clipboard!');
+            showToast('Preview link copied to clipboard!', 'success');
         }).catch(err => {
             console.error('Failed to copy text: ', err);
+            showToast('Failed to copy preview link', 'error');
         });
     }
 
-    function confirmDelete(customLink, filename) {
-        if (confirm(`Are you sure you want to delete ${filename}?`)) {
-            fetch(`/delete/${customLink}`, {
-                method: 'POST'
-            }).then(response => {
-                if (response.ok) {
-                    window.location.reload();
-                } else {
-                    alert('Error deleting file');
-                }
-            });
+    function confirmDelete(filename) {
+        if (confirm(`Are you sure you want to delete "${filename}"?`)) {
+            setTimeout(() => {
+                showToast(`File "${filename}" deleted successfully`, 'success');
+            }, 100);
+            return true;
         }
+        return false;
     }
 
     function checkSessionStatus() {
@@ -123,6 +190,38 @@
 
     // Check session status every minute
     setInterval(checkSessionStatus, 60000);
+
+    // Check for URL parameters when the page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        const error = urlParams.get('error');
+        const success = urlParams.get('success');
+        const info = urlParams.get('info');
+
+        if (error) {
+            showToast(decodeURIComponent(error), 'error');
+        }
+
+        if (success) {
+            showToast(decodeURIComponent(success), 'success');
+        }
+
+        if (info) {
+            showToast(decodeURIComponent(info), 'info');
+        }
+
+        // Clear URL parameters after showing toast
+        if (error || success || info) {
+            // Remove query parameters without refreshing the page
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    });
+
+    function copyAndOpen(url) {
+        // Open the URL in a new tab
+        window.open(url, '_blank');
+    }
     </script>
 </body>
 </html>

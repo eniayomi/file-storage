@@ -33,35 +33,57 @@ h1, h2 {
     margin-bottom: 5px;
 }
 
-input[type="text"], input[type="file"] {
-    width: 100%;
+/* Specific width for upload form inputs */
+.container input[type="text"],
+.container input[type="password"] {
+    width: 300px !important;
+    max-width: 300px !important;
     padding: 8px;
     border: 1px solid #ddd;
     border-radius: 4px;
+    font-size: 16px;
+}
+
+/* Specific width for download page password input */
+.container .download-section input[type="password"],
+.container .inline-form input[type="password"] {
+    width: 200px !important;
+    max-width: 200px !important;
+}
+
+/* File input specific */
+.container input[type="file"] {
+    width: auto !important;
 }
 
 .button {
     display: inline-block;
-    padding: 10px 20px;
-    background-color: #007bff;
+    padding: 8px 16px;
+    background-color: #0d6efd;
     color: white;
     text-decoration: none;
     border: none;
-    border-radius: 5px;
+    border-radius: 4px;
     cursor: pointer;
     font-size: 14px;
-    min-width: 120px;
+    font-family: inherit;
+    line-height: 1;
+    margin: 0 2px;
+    min-width: 90px;
     text-align: center;
 }
 
 .button:hover {
-    background-color: #0056b3;
+    background-color: #0b5ed7;
 }
 
-.button.small {
-    padding: 6px 12px;
-    font-size: 13px;
-    min-width: 80px;
+.button.delete {
+    background-color: #dc3545;
+    min-width: 90px;
+}
+
+.button.delete:hover {
+    background-color: #bb2d3b;
 }
 
 .files-table {
@@ -87,9 +109,7 @@ th {
 }
 
 .actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
+    white-space: nowrap;
 }
 
 .no-files {
@@ -102,19 +122,10 @@ th {
     margin-bottom: 30px;
 }
 
-.button.delete {
-    background-color: #dc3545;
-}
-
-.button.delete:hover {
-    background-color: #c82333;
-}
-
 .button-group {
     display: flex;
-    gap: 10px;
-    justify-content: flex-start;
-    margin-top: 20px;
+    gap: 5px;
+    align-items: center;
 }
 
 p {
@@ -191,12 +202,10 @@ input[type="password"] {
 
 .badge-public {
     background-color: #28a745;
-    color: white;
 }
 
 .badge-private {
     background-color: #6c757d;
-    color: white;
 }
 
 /* Visibility toggle button */
@@ -267,4 +276,126 @@ input[type="password"] {
         transform: translateY(0);
         opacity: 1;
     }
+}
+
+.password-section {
+    margin-bottom: 20px;
+}
+
+.password-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.form-group input {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+.form-group label {
+    font-size: 16px;
+}
+
+/* Add these new styles */
+.download-section {
+    margin-bottom: 20px;
+}
+
+.inline-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.inline-form input[type="password"] {
+    width: 200px;
+}
+
+/* Update button styles to ensure consistent appearance */
+.button {
+    display: inline-block;
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: white;
+    text-decoration: none;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    min-width: 120px;
+    text-align: center;
+}
+
+.button:hover {
+    background-color: #0056b3;
+}
+
+/* For the inline password form on download page */
+.inline-form input[type="password"] {
+    width: 200px;
+}
+
+/* For the file input specifically */
+input[type="file"] {
+    width: auto;
+}
+
+/* Target the inline form password input specifically */
+form.inline-form input[type="password"] {
+    width: 200px !important;
+    max-width: 200px !important;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+/* Target the upload form inputs */
+.upload-form input[type="text"],
+.upload-form input[type="password"] {
+    width: 300px !important;
+    max-width: 300px !important;
+}
+
+/* Keep the file input auto width */
+input[type="file"] {
+    width: auto !important;
+}
+
+/* Reset form styles */
+form {
+    margin: 0;
+    padding: 0;
+    display: inline;
+}
+
+input[type="submit"].button {
+    font-family: inherit;
+}
+
+/* Badge styles */
+.badge-public, .badge-private {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 14px;
+    color: white;
+}
+
+.badge-public {
+    background-color: #198754;
+}
+
+.badge-private {
+    background-color: #6c757d;
 } 

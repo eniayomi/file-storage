@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import time
 from contextlib import contextmanager
+import mimetypes
 
 # Load environment variables
 load_dotenv()
@@ -49,10 +50,7 @@ def get_db():
 def init_database():
     """Initialize the database and create tables if they don't exist"""
     try:
-        # Ensure upload directory exists
         ensure_upload_dir()
-
-        # Initialize the database schema
         with get_db() as db:
             cursor = db.cursor()
             cursor.execute('''
@@ -60,7 +58,8 @@ def init_database():
                     custom_link TEXT PRIMARY KEY,
                     file_path TEXT NOT NULL,
                     created_at TEXT NOT NULL,
-                    is_public BOOLEAN DEFAULT 0
+                    is_public BOOLEAN DEFAULT 0,
+                    file_password TEXT
                 )
             ''')
             db.commit()
@@ -86,36 +85,47 @@ security = OptionalHTTPBasic()
 def verify_credentials_or_public(
     request: Request,
     custom_link: str,
+    file_password: str = Form(None),
     credentials: Optional[HTTPBasicCredentials] = Depends(security)
 ):
-    # First check if the file is public
     with get_db() as db:
         cursor = db.cursor()
-        cursor.execute("SELECT is_public FROM links WHERE custom_link = ?", (custom_link,))
+        cursor.execute("SELECT is_public, file_password FROM links WHERE custom_link = ?", (custom_link,))
         result = cursor.fetchone()
         
-        if result and result[0]:  # If file exists and is public
+        if not result:
+            raise HTTPException(status_code=404, detail="Link not found")
+        
+        is_public, stored_password = result
+        
+        # If file is public, allow access
+        if is_public:
             return True
+            
+        # Check admin credentials first
+        if credentials:
+            correct_username = secrets.compare_digest(credentials.username, USERNAME)
+            correct_password = secrets.compare_digest(credentials.password, PASSWORD)
+            if correct_username and correct_password:
+                return True
         
-        # If private, require and verify credentials
-        if not credentials:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required for private files",
-                headers={"WWW-Authenticate": "Basic"},
-            )
+        # If not admin and file has password, handle password check
+        if stored_password:
+            if file_password:
+                if secrets.compare_digest(str(stored_password), str(file_password)):
+                    return True
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="password_required"
+                )
         
-        correct_username = secrets.compare_digest(credentials.username, USERNAME)
-        correct_password = secrets.compare_digest(credentials.password, PASSWORD)
-        
-        if not (correct_username and correct_password):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Basic"},
-            )
-        
-        return True
+        # If all checks fail, require admin authentication
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
 # Keep your original verify_credentials for admin-only routes
 def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
@@ -214,95 +224,163 @@ async def upload_file(
     custom_link: str = Form(...),
     file: UploadFile = File(...),
     is_public: bool = Form(False),
+    file_password: str = Form(None),
     credentials: HTTPBasicCredentials = Depends(verify_credentials)
 ):
-    with get_db() as db:
-        cursor = db.cursor()
-        current_time = datetime.now().isoformat()
-        
-        # Check if custom_link already exists
-        cursor.execute("SELECT file_path FROM links WHERE custom_link = ?", (custom_link,))
-        existing = cursor.fetchone()
-        
-        if existing:
-            # Create a versioned custom_link for the existing file
-            version = 1
-            while True:
-                versioned_link = f"{custom_link}-v{version}"
-                cursor.execute("SELECT file_path FROM links WHERE custom_link = ?", (versioned_link,))
-                if not cursor.fetchone():
-                    break
-                version += 1
-                
-            # Rename the existing entry to include version
+    try:
+        with get_db() as db:
+            cursor = db.cursor()
+            current_time = datetime.now().isoformat()
+            
+            # Check if custom_link already exists
+            cursor.execute("SELECT file_path FROM links WHERE custom_link = ?", (custom_link,))
+            existing = cursor.fetchone()
+            
+            if existing:
+                # Create a versioned custom_link for the existing file
+                version = 1
+                while True:
+                    versioned_link = f"{custom_link}-v{version}"
+                    cursor.execute("SELECT file_path FROM links WHERE custom_link = ?", (versioned_link,))
+                    if not cursor.fetchone():
+                        break
+                    version += 1
+                    
+                # Rename the existing entry to include version
+                cursor.execute(
+                    "UPDATE links SET custom_link = ? WHERE custom_link = ?",
+                    (versioned_link, custom_link)
+                )
+                db.commit()
+            
+            # Save the new file
+            file_path = os.path.join(UPLOAD_DIR, file.filename)
+            contents = await file.read()
+            with open(file_path, "wb") as f:
+                f.write(contents)
+
+            # Insert the new file with the original custom_link
             cursor.execute(
-                "UPDATE links SET custom_link = ? WHERE custom_link = ?",
-                (versioned_link, custom_link)
+                "INSERT INTO links (custom_link, file_path, created_at, is_public, file_password) VALUES (?, ?, ?, ?, ?)",
+                (custom_link, file_path, current_time, is_public, file_password)
             )
             db.commit()
-        
-        # Save the new file
-        file_path = os.path.join(UPLOAD_DIR, file.filename)
-        contents = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(contents)
 
-        # Insert the new file with the original custom_link
-        cursor.execute(
-            "INSERT INTO links (custom_link, file_path, created_at, is_public) VALUES (?, ?, ?, ?)",
-            (custom_link, file_path, current_time, is_public)
+            return RedirectResponse(
+                url=f"/file/{custom_link}?success=File uploaded successfully",
+                status_code=303
+            )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/?error=Upload failed: {str(e)}",
+            status_code=303
         )
-        db.commit()
 
-        return RedirectResponse(url=f"/download/{custom_link}", status_code=303)
-
-@app.get("/download/{custom_link}")
-def download_page(
+@app.get("/file/{custom_link}")
+async def file_page(
     request: Request,
     custom_link: str,
-    auth: bool = Depends(verify_credentials_or_public)
+    credentials: Optional[HTTPBasicCredentials] = Depends(security)
 ):
+    """Show file info and download/preview options"""
     with get_db() as db:
         cursor = db.cursor()
-        cursor.execute("SELECT file_path FROM links WHERE custom_link = ?", (custom_link,))
+        cursor.execute("SELECT file_path, is_public, file_password FROM links WHERE custom_link = ?", (custom_link,))
         result = cursor.fetchone()
-
+        
         if not result:
-            raise HTTPException(status_code=404, detail="Link not found")
-
-        file_path = result[0]
-        if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="File not found")
-
+            
+        file_path, is_public, file_password = result
+        
+        # Check if user is admin
+        is_admin = False
+        if credentials:
+            try:
+                correct_username = secrets.compare_digest(credentials.username, USERNAME)
+                correct_password = secrets.compare_digest(credentials.password, PASSWORD)
+                is_admin = correct_username and correct_password
+            except:
+                is_admin = False
+        
         return templates.TemplateResponse(
             "download.html",
             {
                 "request": request,
+                "custom_link": custom_link,
                 "file_path": os.path.basename(file_path),
+                "requires_password": bool(file_password),
                 "download_link": f"/download/{custom_link}/file",
-                "custom_link": custom_link
+                "preview_link": f"/preview/{custom_link}/file",
+                "is_admin": is_admin
             }
         )
 
-@app.get("/download/{custom_link}/file")
+@app.get("/download/{custom_link}")
+@app.post("/download/{custom_link}")
 async def serve_file(
     request: Request,
     custom_link: str,
-    auth: bool = Depends(verify_credentials_or_public)
+    file_password: str = Form(None),
+    credentials: Optional[HTTPBasicCredentials] = Depends(security)
 ):
+    """Serve the actual file download"""
     with get_db() as db:
         cursor = db.cursor()
-        cursor.execute("SELECT file_path FROM links WHERE custom_link = ?", (custom_link,))
+        cursor.execute("SELECT file_path, is_public, file_password FROM links WHERE custom_link = ?", (custom_link,))
         result = cursor.fetchone()
 
         if not result:
             raise HTTPException(status_code=404, detail="File not found")
 
-        file_path = result[0]
-        if not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail="File not found")
+        file_path, is_public, stored_password = result
 
-        return FileResponse(file_path)
+        # If file is public, serve it
+        if is_public:
+            return FileResponse(
+                file_path,
+                filename=os.path.basename(file_path),
+                media_type='application/octet-stream'
+            )
+
+        # Check admin credentials
+        if credentials:
+            correct_username = secrets.compare_digest(credentials.username, USERNAME)
+            correct_password = secrets.compare_digest(credentials.password, PASSWORD)
+            if correct_username and correct_password:
+                return FileResponse(
+                    file_path,
+                    filename=os.path.basename(file_path),
+                    media_type='application/octet-stream'
+                )
+
+        # For password-protected files, redirect to file info page if no password provided
+        if stored_password and not file_password:
+            return RedirectResponse(
+                url=f"/file/{custom_link}",
+                status_code=303
+            )
+
+        # Verify file password if provided
+        if stored_password and file_password:
+            if secrets.compare_digest(str(stored_password), str(file_password)):
+                return FileResponse(
+                    file_path,
+                    filename=os.path.basename(file_path),
+                    media_type='application/octet-stream'
+                )
+            else:
+                return RedirectResponse(
+                    url=f"/file/{custom_link}?error=incorrect_password",
+                    status_code=303
+                )
+
+        # If no password protection but not admin, require admin auth
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
 @app.get("/files")
 def list_files(request: Request):
@@ -318,26 +396,39 @@ async def delete_file(
     custom_link: str,
     credentials: HTTPBasicCredentials = Depends(verify_credentials)
 ):
-    # Get file path before deleting from database
     with get_db() as db:
         cursor = db.cursor()
+        
+        # Get file info before deletion
         cursor.execute("SELECT file_path FROM links WHERE custom_link = ?", (custom_link,))
         result = cursor.fetchone()
         
         if not result:
-            raise HTTPException(status_code=404, detail="File not found")
-        
+            return RedirectResponse(
+                url="/?error=File not found",
+                status_code=303
+            )
+            
         file_path = result[0]
         
-        # Delete from database
+        # Delete file from filesystem
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception as e:
+            return RedirectResponse(
+                url=f"/?error=Error deleting file: {str(e)}",
+                status_code=303
+            )
+            
+        # Delete database entry
         cursor.execute("DELETE FROM links WHERE custom_link = ?", (custom_link,))
         db.commit()
         
-        # Delete actual file if it exists
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        
-        return RedirectResponse(url="/", status_code=303)
+        return RedirectResponse(
+            url="/?success=File deleted successfully",
+            status_code=303
+        )
 
 @app.post("/toggle-visibility/{custom_link}")
 async def toggle_visibility(
@@ -350,7 +441,10 @@ async def toggle_visibility(
         result = cursor.fetchone()
         
         if not result:
-            raise HTTPException(status_code=404, detail="File not found")
+            return RedirectResponse(
+                url="/?error=File not found",
+                status_code=303
+            )
         
         new_status = not result[0]  # Toggle the current status
         
@@ -360,7 +454,11 @@ async def toggle_visibility(
         )
         db.commit()
         
-        return RedirectResponse(url="/", status_code=303)
+        status_text = "public" if new_status else "private"
+        return RedirectResponse(
+            url=f"/file/{custom_link}?success=File visibility changed to {status_text}",
+            status_code=303
+        )
 
 @app.get("/logout")
 def logout(request: Request):
@@ -387,3 +485,64 @@ def session_status(request: Request, credentials: HTTPBasicCredentials = Depends
             "time_remaining": f"{int(remaining/60)} minutes {int(remaining%60)} seconds"
         }
     return {"session_active": False}
+
+@app.get("/preview/{custom_link}")
+async def preview_file(
+    request: Request,
+    custom_link: str,
+    file_password: str = Form(None),
+    credentials: Optional[HTTPBasicCredentials] = Depends(security)
+):
+    with get_db() as db:
+        cursor = db.cursor()
+        cursor.execute("SELECT file_path, is_public, file_password FROM links WHERE custom_link = ?", (custom_link,))
+        result = cursor.fetchone()
+
+        if not result:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        file_path, is_public, stored_password = result
+        
+        # If file is public, serve it
+        if is_public:
+            return FileResponse(
+                file_path,
+                headers={"Content-Disposition": "inline"}
+            )
+
+        # Check admin credentials
+        if credentials:
+            correct_username = secrets.compare_digest(credentials.username, USERNAME)
+            correct_password = secrets.compare_digest(credentials.password, PASSWORD)
+            if correct_username and correct_password:
+                return FileResponse(
+                    file_path,
+                    headers={"Content-Disposition": "inline"}
+                )
+
+        # For password-protected files, redirect to file info page if no password provided
+        if stored_password and not file_password:
+            return RedirectResponse(
+                url=f"/file/{custom_link}",
+                status_code=303
+            )
+
+        # Verify file password if provided
+        if stored_password and file_password:
+            if secrets.compare_digest(str(stored_password), str(file_password)):
+                return FileResponse(
+                    file_path,
+                    headers={"Content-Disposition": "inline"}
+                )
+            else:
+                return RedirectResponse(
+                    url=f"/file/{custom_link}?error=incorrect_password",
+                    status_code=303
+                )
+
+        # If no password protection but not admin, require admin auth
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
